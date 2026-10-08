@@ -31,6 +31,53 @@ Before wiping a laptop: init, route add, run, then verify -remote with the priva
 key pasted from your password manager. Only wipe once it says it is safe.
 `
 
+const alphaNotice = `claude-afterlife backup is ALPHA: it is new and has had little real-world use.
+Keep another backup of ~/.claude at hand, and only rely on this one after
+"claude-afterlife backup verify -remote" says it is safe. You use it at your own risk.`
+
+// acceptAlpha asks once per machine for consent to use an alpha feature, and
+// records it in config, which the caller saves. Without a terminal it needs
+// -accept-alpha or CLAUDE_AFTERLIFE_ACCEPT_ALPHA=1, and never assumes yes.
+func (a *App) acceptAlpha(config *backupConfig, accepted bool) bool {
+	if !config.AlphaAccepted.IsZero() {
+		return true
+	}
+	fmt.Fprintln(a.Stdout, alphaNotice)
+	if !accepted && a.Getenv("CLAUDE_AFTERLIFE_ACCEPT_ALPHA") != "1" {
+		if !a.StdinTTY {
+			fmt.Fprintln(a.Stderr, "Stopped: run this in a terminal to accept, or pass -accept-alpha.")
+			return false
+		}
+		answer, ok := a.prompt("Continue at your own risk? [y/N] ")
+		if !ok || (strings.ToLower(answer) != "y" && strings.ToLower(answer) != "yes") {
+			fmt.Fprintln(a.Stdout, "Stopped. Nothing was changed.")
+			return false
+		}
+	}
+	config.AlphaAccepted = a.Now()
+	fmt.Fprintln(a.Stdout)
+	return true
+}
+
+// requireAlphaAccepted asks for consent and saves it right away, for commands
+// that do not otherwise save the backup configuration. It returns -1 to go on.
+func (a *App) requireAlphaAccepted(accepted bool) int {
+	config, err := a.loadBackupConfig()
+	if err != nil {
+		return a.fail(err)
+	}
+	if !config.AlphaAccepted.IsZero() {
+		return -1
+	}
+	if !a.acceptAlpha(config, accepted) {
+		return 1
+	}
+	if err := a.saveBackupConfig(config); err != nil {
+		return a.fail(err)
+	}
+	return -1
+}
+
 type stringList []string
 
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
@@ -86,6 +133,7 @@ func (a *App) cmdBackup(args []string) int {
 func (a *App) cmdBackupInit(args []string) int {
 	set := flag.NewFlagSet("backup init", flag.ContinueOnError)
 	confirmed := set.Bool("confirm-key-saved", false, "do not ask: you will save the printed private key in your password manager")
+	acceptAlpha := set.Bool("accept-alpha", false, "do not ask: you accept that backup is alpha and use it at your own risk")
 	positional, code := a.parseInterspersed(set, args)
 	if code >= 0 {
 		return code
@@ -107,6 +155,9 @@ func (a *App) cmdBackupInit(args []string) int {
 	}
 	if _, exists := config.Destinations[destName]; exists {
 		return a.fail(fmt.Errorf("a destination named %q already exists", destName))
+	}
+	if !a.acceptAlpha(config, *acceptAlpha) {
+		return 1
 	}
 	st := a.storeFor(destName)
 	destDir := filepath.Dir(st.dir)
@@ -580,6 +631,7 @@ func (a *App) cmdBackupRestore(args []string) int {
 	set.BoolVar(&opts.DryRun, "dry-run", false, "show the plan and write nothing")
 	set.BoolVar(&opts.Yes, "yes", false, "do not ask for confirmation")
 	set.BoolVar(&opts.KeepCleanup, "keep-cleanup", false, "do not raise cleanupPeriodDays")
+	acceptAlpha := set.Bool("accept-alpha", false, "do not ask: you accept that backup is alpha and use it at your own risk")
 	positional, code := a.parseInterspersed(set, args)
 	if code >= 0 {
 		return code
@@ -589,6 +641,9 @@ func (a *App) cmdBackupRestore(args []string) int {
 		return 2
 	}
 	opts.Maps, opts.Search = maps, search
+	if code := a.requireAlphaAccepted(*acceptAlpha); code >= 0 {
+		return code
+	}
 	st, cleanup, err := a.openBackupSource(opts.From)
 	if err != nil {
 		return a.fail(err)

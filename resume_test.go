@@ -148,7 +148,7 @@ func TestResumeBringsBackASessionClaudeCodeDeleted(t *testing.T) {
 	if string(restored) != string(original) {
 		t.Fatal("the restored session differs from the original")
 	}
-	if info, _ := os.Stat(path); time.Since(info.ModTime()) > time.Hour {
+	if info, _ := os.Stat(path); !info.ModTime().Equal(l.now) {
 		t.Error("the restored session keeps an old date, so Claude Code's cleanup could delete it straight away")
 	}
 	assertContains(t, l.stderr.String(), "Restored session aaaaaaaa from the backup")

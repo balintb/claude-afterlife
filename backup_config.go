@@ -34,6 +34,7 @@ type backupConfig struct {
 	Destinations      map[string]backupDestination `json:"destinations"`
 	Routes            []backupRoute                `json:"routes"`
 	ConfigDestination string                       `json:"config_destination,omitempty"`
+	AlphaAccepted     time.Time                    `json:"alpha_accepted,omitzero"`
 }
 
 func (a *App) backupDir() string {

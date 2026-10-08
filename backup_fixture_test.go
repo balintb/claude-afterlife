@@ -60,10 +60,10 @@ func newMachine(t *testing.T, home string, bootID string) *machine {
 	m := &machine{
 		t:     t,
 		home:  home,
-		now:   time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
-		boot:  BootInfo{ID: bootID, Time: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		now:   time.Now().UTC().Truncate(time.Second),
+		boot:  BootInfo{ID: bootID, Time: time.Now().UTC().Add(-7 * 24 * time.Hour)},
 		alive: map[int]bool{},
-		env:   map[string]string{"SHELL": "/bin/zsh"},
+		env:   map[string]string{"SHELL": "/bin/zsh", "CLAUDE_AFTERLIFE_ACCEPT_ALPHA": "1"},
 	}
 	m.app = &App{
 		HomeDir:   home,

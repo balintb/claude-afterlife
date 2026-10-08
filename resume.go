@@ -97,6 +97,7 @@ func (a *App) cmdResume(args []string) int {
 	set.Var(&search, "search", "folder to look for the project's repository in (repeatable; default: your home folder)")
 	printOnly := set.Bool("print", false, "print the command instead of running it")
 	claudeCommand := set.String("claude-command", a.defaultClaudeCommand(), "command that starts Claude Code, flags allowed")
+	acceptAlpha := set.Bool("accept-alpha", false, "do not ask before fetching from a backup: you accept that backup is alpha")
 	positional, code := a.parseInterspersed(set, args)
 	if code >= 0 {
 		return code
@@ -140,6 +141,9 @@ func (a *App) cmdResume(args []string) int {
 		}
 	}
 	if id == "" {
+		if code := a.requireAlphaAccepted(*acceptAlpha); code >= 0 {
+			return code
+		}
 		id, folder, err = a.fetchSessionFromBackup(query, *from, *identity, inFolder, search)
 		if err != nil {
 			return a.fail(err)

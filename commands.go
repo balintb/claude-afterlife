@@ -191,17 +191,30 @@ func (a *App) cmdRestore(args []string) int {
 }
 
 func (a *App) confirm(question string) bool {
-	fmt.Fprint(a.Stdout, question)
-	answer, err := bufio.NewReader(a.Stdin).ReadString('\n')
-	if err != nil && answer == "" {
+	answer, ok := a.prompt(question)
+	if !ok {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(answer)) {
+	switch strings.ToLower(answer) {
 	case "", "y", "yes":
 		return true
 	default:
 		return false
 	}
+}
+
+// prompt asks a question and reads one line. All prompts share one reader, so
+// answers typed ahead are not lost between questions.
+func (a *App) prompt(question string) (string, bool) {
+	fmt.Fprint(a.Stdout, question)
+	if a.lines == nil {
+		a.lines = bufio.NewReader(a.Stdin)
+	}
+	answer, err := a.lines.ReadString('\n')
+	if err != nil && answer == "" {
+		return "", false
+	}
+	return strings.TrimSpace(answer), true
 }
 
 func envOr(value, fallback string) string {

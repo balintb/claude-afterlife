@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -48,6 +49,10 @@ type App struct {
 	LookPath   func(file string) (string, error)
 	Run        func(argv []string) (string, error)
 	Executable func() (string, error)
+	Git        func(dir string, args ...string) (string, error)
+	ReadSecret func(prompt string) (string, error)
+
+	lines *bufio.Reader
 }
 
 func main() {
@@ -80,6 +85,8 @@ func newApp() (*App, error) {
 		LookPath:   exec.LookPath,
 		Run:        runCommand,
 		Executable: executablePath,
+		Git:        runGit,
+		ReadSecret: readSecretFromTerminal,
 	}
 	app.ClaudeDir = app.envPath("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	stateBase := app.envPath("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
@@ -112,6 +119,7 @@ Commands:
   restore     reopen the sessions lost since the last restore
   install     run snapshot every minute from a launchd agent (macOS)
   uninstall   remove that launchd agent
+  backup      save sessions to an encrypted git repository and restore them on a new machine
   version     print the version
 
 Run 'claude-afterlife <command> -h' for the flags of a command.
@@ -128,6 +136,7 @@ func (a *App) Main(args []string) int {
 		"restore":   a.cmdRestore,
 		"install":   a.cmdInstall,
 		"uninstall": a.cmdUninstall,
+		"backup":    a.cmdBackup,
 	}
 	switch command := args[0]; command {
 	case "version", "-version", "--version":

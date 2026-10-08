@@ -1,0 +1,38 @@
+name: fuzz
+
+# Go's built-in fuzzing only runs with -fuzz; a normal `go test` just replays the
+# seeds and anything committed under testdata/fuzz. This runs every fuzz target
+# nightly and keeps whatever input breaks one.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - FuzzAppendBackupRoundTrip
+          - FuzzReadIndex
+          - FuzzMergeSettings
+          - FuzzRewriteTopLevelString
+          - FuzzGlobRegexp
+          - FuzzEncodeProjectPath
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 2m .
+      # Commit the uploaded input under testdata/fuzz/ to keep it as a regression test.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failing-input-${{ matrix.target }}
+          path: testdata/fuzz

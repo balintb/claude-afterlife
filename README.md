@@ -120,6 +120,64 @@ Sessions that are already running, whose directory no longer exists (a deleted g
 
 The background job does not see your shell's environment. `claude-afterlife install` copies `CLAUDE_CONFIG_DIR` and the snapshot directory into its launchd agent, so set them before installing. With cron, set any of these you changed for the job as well, or the job and `restore` will look in different places.
 
+## Backup: move your sessions to a new machine (alpha)
+
+> [!WARNING]
+> **Alpha.** `claude-afterlife backup` is new and has had little real-world use. Proceed with caution and always keep another backup of `~/.claude` at hand, for example a plain copy on an external drive, before you wipe or replace a machine. Only rely on it after `backup verify -remote` says it is safe.
+
+`claude-afterlife backup` saves your Claude Code sessions to a private git repository you own, encrypted on your machine, and restores them after a wipe or on a new machine. It saves session transcripts, subagent transcripts, memory, prompt history, settings, `CLAUDE.md`, skills, agents, commands and hooks, plus `claude-afterlife`'s own record of which sessions were open. It does not save your code or credentials: push your branches, and log in again afterwards.
+
+Before wiping a machine:
+
+```sh
+claude-afterlife backup init personal git@github.com:you/claude-sessions.git   # shows a private key once: put it in your password manager
+claude-afterlife backup route add '~/code/**' personal                         # nothing is backed up without a route
+claude-afterlife backup run                                                      # encrypt, commit and push; lists code you have not pushed
+claude-afterlife backup verify -remote                                           # paste the key from your password manager
+```
+
+End your Claude Code sessions, then run `backup run` and `backup verify -remote` once more. Only wipe when verify says it is safe: it rebuilds every file from a fresh clone of the remote and compares it byte for byte with `~/.claude`.
+
+After the wipe, clone your repositories wherever you want them, then:
+
+```sh
+brew install balintb/tap/claude-afterlife
+claude-afterlife backup restore -from git@github.com:you/claude-sessions.git
+claude-afterlife restore    # reopens the sessions that were open at the last backup
+```
+
+Restore works out where each project's code lives now: the same path, a repository with the same git remote (searched under `-search`, your home folder by default), or the same place under a moved home folder; otherwise it asks, or takes `-map /old/path=/new/path`. It shows the plan before writing anything, checks every file against the backup first, never overwrites newer or different local files, and raises `cleanupPeriodDays` so Claude Code does not delete the restored history on its next start.
+
+### Work data
+
+Transcripts are complete records of your work: source code, command output (including production data), customer data that passed through a session, and any secret that was pasted or printed. Do not back up work projects to a personal repository, even encrypted; ask your company where they may go. Routes keep work and personal projects apart, each destination with its own key:
+
+```sh
+claude-afterlife backup init work git@github.com:your-company/claude-sessions-you.git
+claude-afterlife backup route add '~/code/work/**' work
+```
+
+### Keys and safety
+
+- Each destination has its own key pair. Your machine keeps only the public half, so `backup run` can encrypt but not decrypt; `verify` and `restore` need the private key
+- Lose the private key and nobody, including you, can open the backup again
+- Every backup index is authenticated with a key derived from the private key, so a backup that was modified on the remote is refused
+- `backup run` only uploads what changed: new lines of growing transcripts become new encrypted files, existing ones are never rewritten. Sessions Claude Code deletes after 30 days stay in the backup
+- git keeps history, so data cannot simply be deleted from a backup once pushed
+
+### Backup restore flags
+
+| Flag | Meaning |
+|---|---|
+| `-from <git-remote>` | The backup to restore, or a local folder holding one |
+| `-identity <file>` | File holding the private key, or `-` to read it from standard input. Default: ask |
+| `-map /old/path=/new/path` | Where a project's code lives now (repeatable) |
+| `-search <folder>` | Where to look for repositories by git remote (repeatable). Default: your home folder |
+| `-machine <id>` | Restore this machine's backup when several share one. Default: the most recent |
+| `-dry-run` | Show the plan and write nothing |
+| `-yes` | Do not ask for confirmation |
+| `-keep-cleanup` | Leave `cleanupPeriodDays` as it is |
+
 ## Looking for one particular session?
 
 Try [cz](https://github.com/balintb/cz). Run `cz` in a project, pick any past Claude Code session from a fuzzy list, and it resumes it, no session IDs to remember. `claude-afterlife` brings back the set of sessions you had open; `cz` finds that one from last Tuesday.
@@ -141,11 +199,11 @@ cz init   # one-time: adds the SessionEnd hook cz uses to log your sessions
 
 ## Privacy
 
-Snapshots hold session ids, working directories, session names and process ids, and are written with owner-only permissions. **Nothing leaves your machine, and claude-afterlife makes no network requests.**
+Snapshots hold session ids, working directories, session names and process ids, and are written with owner-only permissions. **Nothing leaves your machine unless you use `backup`**, which pushes encrypted data to the git remote you choose, using git and your own credentials. `claude-afterlife` makes no other network requests.
 
 ## Development
 
-Standard library only, no dependencies.
+Dependencies: [age](https://github.com/FiloSottile/age) for encryption, [klauspost/compress](https://github.com/klauspost/compress) for zstd and [x/term](https://pkg.go.dev/golang.org/x/term) for reading the private key without echoing it.
 
 ```sh
 go test -race ./...
@@ -154,6 +212,14 @@ git config core.hooksPath .githooks   # reject commit subjects release-please ca
 ```
 
 Tests don't open terminal windows or load launchd jobs - every terminal is driven through a fake command runner, and the AppleScripts are only compiled with `osacompile`, which does not launch apps. One test loads a throwaway launchd agent to check that it removes itself once its binary is gone; it runs only with `CLAUDE_AFTERLIFE_LAUNCHD_TEST=1`.
+
+The backup tests run real git against local bare repositories, with your git configuration kept out. Fuzz targets cover the riskiest code (the backup round trip, the index reader, settings merging, transcript rewriting, route patterns and folder names). `go test` only replays their seeds; to fuzz one:
+
+```sh
+go test -run '^$' -fuzz FuzzAppendBackupRoundTrip -fuzztime 1m .
+```
+
+The `fuzz` workflow fuzzes every target nightly and uploads any input that breaks one; commit it under `testdata/fuzz/` to keep it as a regression test.
 
 ## License
 

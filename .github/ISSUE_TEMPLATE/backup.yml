@@ -1,0 +1,131 @@
+name: Session backup problem
+description: Something went wrong with backup, verify, restore or resume
+title: "backup: "
+labels: ["bug", "backup"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Session backup is alpha, so every report helps.
+
+        **Never paste your private key** (`AGE-SECRET-KEY-1...`), session transcripts, anything from `~/.claude/projects`, or secrets that appear in command output. Replace project paths, session ids and a private repository's URL with placeholders if they are sensitive.
+
+        If a backup or restore went wrong, leave `~/.claude`, your other backup of it and the backup repository as they are until this is resolved, so nothing is lost while it is investigated.
+
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command
+      description: Which command went wrong?
+      options:
+        - backup init
+        - backup route
+        - backup status
+        - backup run
+        - backup verify
+        - backup restore
+        - resume
+        - something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-loss
+    attributes:
+      label: Did you lose sessions?
+      description: Sessions that are no longer on any machine, and that the backup cannot restore.
+      options:
+        - "No"
+        - Not sure
+        - "Yes"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+      placeholder: |
+        I ran `claude-afterlife backup verify -remote` after `backup run`.
+        I expected "Safe to wipe", but it reported ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The command's complete output, redacted as above.
+      render: text
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The commands in order, if you can make it happen again.
+      placeholder: |
+        1. claude-afterlife backup init personal <remote>
+        2. claude-afterlife backup route add '~/code/**' personal
+        3. claude-afterlife backup run
+        4. ...
+
+  - type: input
+    id: afterlife-version
+    attributes:
+      label: claude-afterlife version
+      description: Output of `claude-afterlife version`
+      placeholder: claude-afterlife 0.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`
+      placeholder: 2.1.292 (Claude Code)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: git-host
+    attributes:
+      label: Where the backup repository is hosted
+      options:
+        - GitHub
+        - GitLab
+        - Bitbucket
+        - Self-hosted git server
+        - Local folder only, no remote
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: The relevant part of `~/.config/claude-afterlife/config.toml` and `claude-afterlife backup status`, if you use them. Redact paths and repository URLs if they are sensitive.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: This report contains no private key, no session content and no secrets
+          required: true
+        - label: I searched the existing issues for this problem
+          required: false

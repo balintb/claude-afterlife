@@ -174,7 +174,7 @@ A misspelt or unknown setting is an error, so a typo is never silently ignored. 
 ## Backup: move your sessions to a new machine (alpha)
 
 > [!WARNING]
-> **Alpha.** `claude-afterlife backup` is new and has had little real-world use. Proceed with caution and always keep another backup of `~/.claude` at hand, for example a plain copy on an external drive, before you wipe or replace a machine. Only rely on it after `backup verify -remote` says it is safe.
+> **Alpha.** `claude-afterlife backup` is new and has had little real-world use. Proceed with caution and always keep another backup of `~/.claude` at hand, for example a plain copy on an external drive, before you wipe or replace a machine. Only rely on it after `backup verify -remote` says it is safe. If something goes wrong, please [open an issue](#reporting-a-problem).
 
 `claude-afterlife backup` saves your Claude Code sessions to a private git repository you own, encrypted on your machine, and restores them after a wipe or on a new machine. It saves session transcripts, subagent transcripts, memory, prompt history, settings, `CLAUDE.md`, skills, agents, commands and hooks, plus `claude-afterlife`'s own record of which sessions were open. It does not save your code or credentials: push your branches, and log in again afterwards.
 
@@ -233,6 +233,10 @@ claude-afterlife backup route add '~/code/work/**' work
 | `-dry-run` | Show the plan and write nothing |
 | `-yes` | Do not ask for confirmation |
 | `-keep-cleanup` | Leave `cleanupPeriodDays` as it is |
+
+### Reporting a problem
+
+Open an issue with the [session backup template](https://github.com/balintb/claude-afterlife/issues/new?template=backup.yml). It asks for the command you ran, its output, and the `claude-afterlife` and Claude Code versions. **Never include your private key**, session transcripts, anything from `~/.claude/projects`, or secrets that show up in output. If they're sensitive, replace project paths, session ids and a private repository's URL with placeholders.
 
 ## Caveats
 

@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	filippo.io/age v1.3.2
+	github.com/BurntSushi/toml v1.6.0
 	github.com/klauspost/compress v1.20.1
 	golang.org/x/term v0.46.0
 )

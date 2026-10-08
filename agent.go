@@ -36,7 +36,7 @@ func (a *App) agentPlistPath() string {
 
 func (a *App) cmdInstall(args []string) int {
 	set := flag.NewFlagSet("install", flag.ContinueOnError)
-	interval := set.Duration("interval", time.Minute, "how often to take a snapshot")
+	interval := set.Duration("interval", a.defaultInterval(), "how often to take a snapshot")
 	noLoad := set.Bool("no-load", false, "write the launchd agent but do not start it")
 	if code := a.parse(set, args); code >= 0 {
 		return code

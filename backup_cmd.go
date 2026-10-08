@@ -17,10 +17,11 @@ repository and restores them on a new or wiped machine. Code and credentials are
 not included.
 
 Usage:
-  claude-afterlife backup init <name> <git-remote>   create a destination and its key
+  claude-afterlife backup init <name> <git-remote>   create a destination: a new, empty repository for the
+                                                     backup (not your code's) and the key that opens it
   claude-afterlife backup route add <path> <name>    back up projects under <path> (~/code/**) to <name>
   claude-afterlife backup route remove <path>
-  claude-afterlife backup route config <name>        where Claude Code settings and skills go
+  claude-afterlife backup route config <name>|none   where Claude Code settings and skills go, or nowhere
   claude-afterlife backup status                     destinations, routes, projects not backed up
   claude-afterlife backup run [<name>...]            back up now and push
   claude-afterlife backup verify [-remote] [<name>]  rebuild everything and compare with ~/.claude
@@ -97,7 +98,7 @@ func (a *App) cmdBackupInit(args []string) int {
 	if len(positional) == 2 {
 		remote = positional[1]
 	}
-	if !destinationNamePattern.MatchString(destName) {
+	if !destinationNamePattern.MatchString(destName) || destName == noConfigDestination {
 		return a.fail(fmt.Errorf("destination names use lowercase letters, digits, - and _, like personal or work"))
 	}
 	config, err := a.loadBackupConfig()
@@ -161,7 +162,9 @@ func (a *App) cmdBackupInit(args []string) int {
 		discard()
 		return a.fail(err)
 	}
-	fmt.Fprintf(a.Stdout, "\nClaude Code settings and skills go to %q (change with: %s backup route config <name>).\n", config.ConfigDestination, name)
+	if a.settingsDestination(config) == destName {
+		fmt.Fprintf(a.Stdout, "\nClaude Code settings and skills go to %q (change with: %s backup route config <name>, or none).\n", destName, name)
+	}
 	fmt.Fprintf(a.Stdout, "Next, choose which projects to back up, for example:\n  %s backup route add '~/code/**' %s\nthen run: %s backup run\n", name, destName, name)
 	return 0
 }
@@ -212,6 +215,11 @@ func (a *App) cmdBackupRoute(args []string) int {
 			return existing == normalized
 		})
 		if len(config.Routes) == before {
+			for _, route := range a.fileRoutes() {
+				if existing, _ := a.normalizePattern(route.Pattern); existing == normalized {
+					return a.fail(fmt.Errorf("the route for %s is set in %s; remove it there", args[1], a.fmtPath(a.ConfigPath)))
+				}
+			}
 			return a.fail(fmt.Errorf("no route for %s", args[1]))
 		}
 		if err := a.saveBackupConfig(config); err != nil {
@@ -220,14 +228,21 @@ func (a *App) cmdBackupRoute(args []string) int {
 		fmt.Fprintf(a.Stdout, "Removed the route for %s. Sessions already backed up stay in the backup.\n", args[1])
 		return 0
 	case args[0] == "config" && len(args) == 2:
-		if _, ok := config.Destinations[args[1]]; !ok {
-			return a.fail(fmt.Errorf("no backup destination named %q", args[1]))
+		if a.File.Backup.Settings != "" {
+			return a.fail(fmt.Errorf("backup.settings is set in %s; change it there", a.fmtPath(a.ConfigPath)))
+		}
+		if _, ok := config.Destinations[args[1]]; !ok && args[1] != noConfigDestination {
+			return a.fail(fmt.Errorf("no backup destination named %q (or use none)", args[1]))
 		}
 		config.ConfigDestination = args[1]
 		if err := a.saveBackupConfig(config); err != nil {
 			return a.fail(err)
 		}
-		fmt.Fprintf(a.Stdout, "Claude Code settings and skills go to %q.\n", args[1])
+		if args[1] == noConfigDestination {
+			fmt.Fprintln(a.Stdout, "Claude Code settings and skills are not backed up.")
+		} else {
+			fmt.Fprintf(a.Stdout, "Claude Code settings and skills go to %q.\n", args[1])
+		}
 		return 0
 	default:
 		fmt.Fprintln(a.Stderr, "Usage: claude-afterlife backup route add <path> <name> | remove <path> | config <name> | list")
@@ -236,16 +251,27 @@ func (a *App) cmdBackupRoute(args []string) int {
 }
 
 func (a *App) printRoutes(config *backupConfig) {
-	if len(config.Routes) == 0 {
+	routes := a.allRoutes(config)
+	if len(routes) == 0 {
 		fmt.Fprintln(a.Stdout, "No routes: no projects are backed up yet.")
 	} else {
 		fmt.Fprintln(a.Stdout, "Routes:")
-		for _, route := range config.Routes {
-			fmt.Fprintf(a.Stdout, "  %s  ->  %s\n", route.Pattern, route.Destination)
+		for _, route := range routes {
+			source := ""
+			if route.FromFile {
+				source = "  (config file)"
+			}
+			if _, ok := config.Destinations[route.Destination]; !ok {
+				source += fmt.Sprintf("  (no destination %q yet: create it with backup init)", route.Destination)
+			}
+			fmt.Fprintf(a.Stdout, "  %s  ->  %s%s\n", route.Pattern, route.Destination, source)
 		}
 	}
-	if config.ConfigDestination != "" {
-		fmt.Fprintf(a.Stdout, "Claude Code settings and skills  ->  %s\n", config.ConfigDestination)
+	switch destination := a.settingsDestination(config); destination {
+	case "", noConfigDestination:
+		fmt.Fprintln(a.Stdout, "Claude Code settings and skills  ->  not backed up")
+	default:
+		fmt.Fprintf(a.Stdout, "Claude Code settings and skills  ->  %s\n", destination)
 	}
 }
 
@@ -260,6 +286,9 @@ func (a *App) cmdBackupStatus(args []string) int {
 	}
 	if len(config.Destinations) == 0 {
 		fmt.Fprintf(a.Stdout, "No backup destinations yet. Create one with: %s backup init <name> <git-remote>\n", name)
+		if len(a.fileRoutes()) > 0 {
+			a.printRoutes(config)
+		}
 		return 0
 	}
 	fmt.Fprintln(a.Stdout, "Destinations:")
@@ -443,6 +472,9 @@ func (a *App) readBackupKey(identity string) (backupKey, error) {
 		text = string(data)
 	case identity != "":
 		data, err := os.ReadFile(a.expandHome(identity))
+		if errors.Is(err, os.ErrNotExist) {
+			return backupKey{}, fmt.Errorf("there is no private key file at %s. Point -identity at the file where you saved the key backup init printed, or leave out -identity to paste the key", a.fmtPath(a.expandHome(identity)))
+		}
 		if err != nil {
 			return backupKey{}, err
 		}

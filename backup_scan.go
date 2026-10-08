@@ -205,7 +205,7 @@ func (a *App) backupSources(config *backupConfig, dest string) ([]sourceFile, er
 		sources = append(sources, sourceFile{storePath: "claude/history.jsonl", content: history, kind: kindWhole})
 	}
 	sources = append(sources, a.bootsFor(config, dest)...)
-	if config.ConfigDestination == dest {
+	if a.settingsDestination(config) == dest {
 		sources = append(sources, a.configSources()...)
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].storePath < sources[j].storePath })
@@ -245,7 +245,7 @@ func (a *App) historyFor(config *backupConfig, dest string) ([]byte, bool) {
 			Project string `json:"project"`
 		}
 		_ = json.Unmarshal(line, &fields)
-		target := config.ConfigDestination
+		target := a.settingsDestination(config)
 		if fields.Project != "" {
 			target = a.destinationFor(config, fields.Project)
 		}

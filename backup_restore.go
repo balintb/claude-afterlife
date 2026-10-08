@@ -149,7 +149,7 @@ func (a *App) planMappings(index backupIndex, opts restoreOptions) ([]projectMap
 
 	roots := opts.Search
 	if len(roots) == 0 {
-		roots = []string{a.HomeDir}
+		roots = a.defaultSearch()
 	}
 	var repos map[string][]string
 	var mappings []projectMapping

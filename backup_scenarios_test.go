@@ -88,6 +88,41 @@ func TestNothingIsBackedUpWithoutARoute(t *testing.T) {
 	}
 }
 
+func TestSettingsAndSkillsCanBeLeftOut(t *testing.T) {
+	isolateGit(t)
+	root := t.TempDir()
+	l := setupLaptop(t, root, filepath.Join(root, "Users", "me"), time.Now())
+	key := l.initDestination("personal", l.remote)
+	assertContains(t, l.mustRun("backup", "route", "config", "none"), "not backed up")
+	l.mustRun("backup", "route", "add", "~/code/web", "personal")
+	assertContains(t, l.mustRun("backup", "status"), "Claude Code settings and skills  ->  not backed up")
+	assertContains(t, l.mustRun("backup", "run"), "personal: 1 sessions in 1 projects")
+	st, k, index := l.openStore("personal", key)
+	for _, entry := range index.Files {
+		switch {
+		case strings.HasPrefix(entry.Path, "claude/projects/"+encodeProjectPath(l.web)+"/"), entry.Path == "claude/history.jsonl":
+		case strings.HasPrefix(entry.Path, "afterlife/boots/"):
+			var boot Boot
+			data, err := l.app.assembleBytes(st, k, entry)
+			if err != nil || json.Unmarshal(data, &boot) != nil {
+				t.Fatalf("%s: %v", entry.Path, err)
+			}
+			if len(boot.Sessions) != 1 || boot.Sessions[sessionWeb].Cwd != l.web {
+				t.Errorf("the snapshot holds sessions of unrouted projects: %+v", boot.Sessions)
+			}
+		default:
+			t.Errorf("%s was backed up although only ~/code/web is routed and settings are off", entry.Path)
+		}
+	}
+	history := entryFor(t, index, "history.jsonl")
+	if history.Size != int64(len(historyLine("style the web", l.web))) {
+		t.Errorf("prompt history holds %d bytes, want only the web project's line", history.Size)
+	}
+	if code := l.run("backup", "init", "none", l.remote+"2", "-confirm-key-saved"); code != 1 {
+		t.Error("a destination named none was created")
+	}
+}
+
 func TestEveryObjectOnlyHoldsRoutedData(t *testing.T) {
 	l, key := simpleLaptop(t)
 	st, k, _ := l.openStore("personal", key)
@@ -331,6 +366,14 @@ func TestVerifyFindsDamage(t *testing.T) {
 			t.Fatal("verify accepted another key")
 		}
 		assertContains(t, l.stderr.String(), "belongs to a different backup")
+	})
+	t.Run("key file missing", func(t *testing.T) {
+		l, _ := simpleLaptop(t)
+		if code := l.run("backup", "verify", "-remote", "-identity", filepath.Join(l.root, "nowhere.key")); code != 1 {
+			t.Fatal("verify ran without a key")
+		}
+		assertContains(t, l.stderr.String(), "there is no private key file at")
+		assertContains(t, l.stderr.String(), "leave out -identity to paste the key")
 	})
 	t.Run("key from standard input", func(t *testing.T) {
 		l, key := simpleLaptop(t)

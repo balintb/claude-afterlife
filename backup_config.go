@@ -14,6 +14,8 @@ import (
 
 var destinationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
+const noConfigDestination = "none"
+
 type backupDestination struct {
 	Remote    string    `json:"remote,omitempty"`
 	Recipient string    `json:"recipient"`
@@ -24,6 +26,7 @@ type backupDestination struct {
 type backupRoute struct {
 	Pattern     string `json:"pattern"`
 	Destination string `json:"destination"`
+	FromFile    bool   `json:"-"`
 }
 
 type backupConfig struct {
@@ -82,6 +85,21 @@ func (config *backupConfig) destinationNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// allRoutes is the routes from the config file followed by those made with
+// backup route add.
+func (a *App) allRoutes(config *backupConfig) []backupRoute {
+	return append(a.fileRoutes(), config.Routes...)
+}
+
+// settingsDestination is where Claude Code settings and skills go: the config
+// file's backup.settings when set, otherwise what backup route config chose.
+func (a *App) settingsDestination(config *backupConfig) string {
+	if a.File.Backup.Settings != "" {
+		return a.File.Backup.Settings
+	}
+	return config.ConfigDestination
 }
 
 func (a *App) expandHome(path string) string {
@@ -145,7 +163,7 @@ func (a *App) destinationFor(config *backupConfig, projectPath string) string {
 		return ""
 	}
 	best, bestLength := "", -1
-	for _, route := range config.Routes {
+	for _, route := range a.allRoutes(config) {
 		pattern, err := a.normalizePattern(route.Pattern)
 		if err != nil {
 			continue

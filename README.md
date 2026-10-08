@@ -83,6 +83,7 @@ The first time `restore` drives Ghostty, iTerm2 or Terminal, macOS asks whether 
 
 ```sh
 claude-afterlife list                      # boots on record, and the sessions seen during the previous one
+claude-afterlife resume 5836d989           # resume one session by id from any folder (see below)
 claude-afterlife restore -dry-run          # show what would be reopened
 claude-afterlife restore -terminal print   # print the commands instead of opening tabs
 claude-afterlife restore -all              # every session that ended, not only the latest loss
@@ -90,6 +91,17 @@ claude-afterlife restore -boot previous    # only what the last reboot took down
 claude-afterlife snapshot                  # take a snapshot now
 claude-afterlife uninstall                 # remove the launchd agent (-purge also deletes snapshots)
 ```
+
+### Resume one session by id
+
+```sh
+claude-afterlife --resume 5836d989-6d90-44a6-9d42-b209a90838d2   # same as claude --resume, from any folder
+claude-afterlife resume 5836d989                                 # the start of the id is enough
+```
+
+Resumes a single session from any folder: it takes the same session id as `claude --resume`, or just its start, finds the transcript, changes to the session's project folder and runs `claude --resume <id>` there, since Claude Code only finds a session from its own project folder. `-in <folder>` resumes it somewhere else, copying the session there first, and `-print` prints the command instead of running it.
+
+When the session is not on this machine, because Claude Code deleted it after 30 days or this is a new machine, `resume` fetches just that session from your backup: the destination that holds it, or `-from <git-remote>`. It needs the backup's private key (`-identity <file>`, or it asks) and places the session in the folder where the project lives now, found the same way `backup restore` finds it. A session that is already running is never resumed a second time.
 
 ### Restore flags
 
@@ -117,8 +129,47 @@ Sessions that are already running, whose directory no longer exists (a deleted g
 | `CLAUDE_AFTERLIFE_DIR` | `$XDG_STATE_HOME/claude-afterlife` or `~/.local/state/claude-afterlife` | Where snapshots are stored |
 | `CLAUDE_AFTERLIFE_TERMINAL` | `auto` | Default for `restore -terminal` |
 | `CLAUDE_AFTERLIFE_CLAUDE` | `claude` | Default for `restore -claude-command` |
+| `CLAUDE_AFTERLIFE_CONFIG` | `~/.config/claude-afterlife/config.toml` | Where the configuration file is |
 
 The background job does not see your shell's environment. `claude-afterlife install` copies `CLAUDE_CONFIG_DIR` and the snapshot directory into its launchd agent, so set them before installing. With cron, set any of these you changed for the job as well, or the job and `restore` will look in different places.
+
+### Configuration file
+
+Defaults can live in `~/.config/claude-afterlife/config.toml` (or under `$XDG_CONFIG_HOME`, or wherever `CLAUDE_AFTERLIFE_CONFIG` points). Every setting is optional, and flags and environment variables override the file. `claude-afterlife config init` writes a commented template, and `claude-afterlife config` shows which file is in use and the settings in effect.
+
+```toml
+[restore]
+terminal = "ghostty"
+claude_command = "claude --model opus"
+recent = "15m"
+
+[install]
+interval = "30s"
+
+[backup]
+search = ["~/code"]
+settings = "personal"
+
+[[backup.routes]]
+path = "~/code/personal/**"
+destination = "personal"
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `claude_dir` | `~/.claude` | Claude Code's folder. `CLAUDE_CONFIG_DIR` wins |
+| `state_dir` | `~/.local/state/claude-afterlife` | Where snapshots and backups are kept. `CLAUDE_AFTERLIFE_DIR` wins |
+| `restore.terminal` | `auto` | Default for `restore -terminal`. `CLAUDE_AFTERLIFE_TERMINAL` wins |
+| `restore.claude_command` | `claude` | Default for `-claude-command` in `restore` and `resume`. `CLAUDE_AFTERLIFE_CLAUDE` wins |
+| `restore.recent` | `10m` | Default for `restore -recent` |
+| `restore.new_window` | `false` | Default for `restore -new-window` |
+| `restore.include_background` | `false` | Default for `restore -include-background` |
+| `install.interval` | `1m` | Default for `install -interval` |
+| `backup.search` | your home folder | Where `backup restore` and `resume` look for repositories by git remote |
+| `backup.settings` | the first destination | Destination for Claude Code settings and skills, or `none` |
+| `[[backup.routes]]` | none | A `path` and a `destination`, added to the routes made with `backup route add` |
+
+A misspelt or unknown setting is an error, so a typo is never silently ignored. Routes and `backup.settings` from the file can only be changed in the file. Keys and the machine's identity are never stored in it, so it is safe to keep with your dotfiles.
 
 ## Backup: move your sessions to a new machine (alpha)
 
@@ -126,6 +177,11 @@ The background job does not see your shell's environment. `claude-afterlife inst
 > **Alpha.** `claude-afterlife backup` is new and has had little real-world use. Proceed with caution and always keep another backup of `~/.claude` at hand, for example a plain copy on an external drive, before you wipe or replace a machine. Only rely on it after `backup verify -remote` says it is safe.
 
 `claude-afterlife backup` saves your Claude Code sessions to a private git repository you own, encrypted on your machine, and restores them after a wipe or on a new machine. It saves session transcripts, subagent transcripts, memory, prompt history, settings, `CLAUDE.md`, skills, agents, commands and hooks, plus `claude-afterlife`'s own record of which sessions were open. It does not save your code or credentials: push your branches, and log in again afterwards.
+
+Two terms used below:
+
+- A **destination** is a named backup: one private git repository that holds nothing but encrypted session data, and the key that opens it. You create one with `backup init <name> <git-remote>`, for example `personal` backed by `git@github.com:you/claude-sessions.git`. It is not where your code lives, and not your code's repository: make a new, empty repository for it
+- A **route** decides which projects' sessions go to which destination, by the folder the project lives in on this machine, for example `~/code/**` -> `personal`. A project without a route is not backed up
 
 Before wiping a machine:
 
@@ -150,7 +206,7 @@ Restore works out where each project's code lives now: the same path, a reposito
 
 ### Work data
 
-Transcripts are complete records of your work: source code, command output (including production data), customer data that passed through a session, and any secret that was pasted or printed. Do not back up work projects to a personal repository, even encrypted; ask your company where they may go. Routes keep work and personal projects apart, each destination with its own key:
+Transcripts are complete records of your work: source code, command output (including production data), customer data that passed through a session, and any secret that was pasted or printed. Do not back up work projects to a personal repository, even encrypted; ask your company where they may go. A second destination keeps them apart: a separate repository with a separate key, and a route that sends your work folders there:
 
 ```sh
 claude-afterlife backup init work git@github.com:your-company/claude-sessions-you.git
@@ -159,7 +215,7 @@ claude-afterlife backup route add '~/code/work/**' work
 
 ### Keys and safety
 
-- Each destination has its own key pair. Your machine keeps only the public half, so `backup run` can encrypt but not decrypt; `verify` and `restore` need the private key
+- Every destination (backup repository) has its own key pair, created by `backup init`. With a `personal` and a `work` destination you have two private keys, and each opens only its own backup. Your machine keeps only the public halves, so `backup run` can encrypt but not decrypt; `verify`, `restore` and `resume` need the private key
 - Lose the private key and nobody, including you, can open the backup again
 - Every backup index is authenticated with a key derived from the private key, so a backup that was modified on the remote is refused
 - `backup run` only uploads what changed: new lines of growing transcripts become new encrypted files, existing ones are never rewritten. Sessions Claude Code deletes after 30 days stay in the backup
@@ -177,17 +233,6 @@ claude-afterlife backup route add '~/code/work/**' work
 | `-dry-run` | Show the plan and write nothing |
 | `-yes` | Do not ask for confirmation |
 | `-keep-cleanup` | Leave `cleanupPeriodDays` as it is |
-
-## Looking for one particular session?
-
-Try [cz](https://github.com/balintb/cz). Run `cz` in a project, pick any past Claude Code session from a fuzzy list, and it resumes it, no session IDs to remember. `claude-afterlife` brings back the set of sessions you had open; `cz` finds that one from last Tuesday.
-
-```sh
-brew install balintb/tap/cz
-cz init   # one-time: adds the SessionEnd hook cz uses to log your sessions
-```
-
-`cz` might gain what `claude-afterlife` does in a future release.
 
 ## Caveats
 

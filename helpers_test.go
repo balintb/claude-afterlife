@@ -83,6 +83,7 @@ func newFixture(t *testing.T) *fixture {
 		Executable: func() (string, error) { return "/usr/local/bin/claude-afterlife", nil },
 		Git:        runGit,
 		ReadSecret: func(string) (string, error) { return "", errors.New("no terminal in tests") },
+		Exec:       func(string, []string) error { return errors.New("no exec in tests") },
 	}
 	return f
 }

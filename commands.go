@@ -95,12 +95,12 @@ func (a *App) cmdList(args []string) int {
 func (a *App) cmdRestore(args []string) int {
 	set := flag.NewFlagSet("restore", flag.ContinueOnError)
 	which := set.String("boot", "auto", "auto, previous, current, or a boot id prefix")
-	terminalName := set.String("terminal", envOr(a.Getenv("CLAUDE_AFTERLIFE_TERMINAL"), "auto"), "auto, "+strings.Join(terminalNames, ", "))
-	newWindow := set.Bool("new-window", false, "open the tabs in a new window, even when run inside one")
-	recent := set.Duration("recent", defaultRecent, "how close to the latest loss a session must have ended to be reopened")
+	terminalName := set.String("terminal", a.defaultTerminal(), "auto, "+strings.Join(terminalNames, ", "))
+	newWindow := set.Bool("new-window", a.File.Restore.NewWindow, "open the tabs in a new window, even when run inside one")
+	recent := set.Duration("recent", a.defaultRecent(), "how close to the latest loss a session must have ended to be reopened")
 	all := set.Bool("all", false, "every session that ended, however long ago")
-	includeBackground := set.Bool("include-background", false, "also reopen non-interactive sessions")
-	claudeCommand := set.String("claude-command", envOr(a.Getenv("CLAUDE_AFTERLIFE_CLAUDE"), "claude"), "command that starts Claude Code, flags allowed")
+	includeBackground := set.Bool("include-background", a.File.Restore.IncludeBackground, "also reopen non-interactive sessions")
+	claudeCommand := set.String("claude-command", a.defaultClaudeCommand(), "command that starts Claude Code, flags allowed")
 	dryRun := set.Bool("dry-run", false, "show what would be reopened, open nothing")
 	var yes bool
 	set.BoolVar(&yes, "yes", false, "do not ask for confirmation")
@@ -215,13 +215,6 @@ func (a *App) prompt(question string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(answer), true
-}
-
-func envOr(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
 }
 
 func shortID(id string) string {

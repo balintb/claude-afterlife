@@ -25,6 +25,13 @@ type machine struct {
 	now    time.Time
 	boot   BootInfo
 	alive  map[int]bool
+	execs  []execCall
+	env    map[string]string
+}
+
+type execCall struct {
+	dir  string
+	argv []string
 }
 
 // isolateGit keeps the developer's git configuration (signing, hooks, identity)
@@ -56,6 +63,7 @@ func newMachine(t *testing.T, home string, bootID string) *machine {
 		now:   time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
 		boot:  BootInfo{ID: bootID, Time: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
 		alive: map[int]bool{},
+		env:   map[string]string{"SHELL": "/bin/zsh"},
 	}
 	m.app = &App{
 		HomeDir:   home,
@@ -66,7 +74,7 @@ func newMachine(t *testing.T, home string, bootID string) *machine {
 		Stdin:     strings.NewReader(""),
 		Stdout:    &m.stdout,
 		Stderr:    &m.stderr,
-		Getenv:    func(key string) string { return map[string]string{"SHELL": "/bin/zsh"}[key] },
+		Getenv:    func(key string) string { return m.env[key] },
 		Now:       func() time.Time { return m.now },
 		Boot:      func() (BootInfo, error) { return m.boot, nil },
 		Alive:     func(pid int) bool { return m.alive[pid] },
@@ -78,6 +86,10 @@ func newMachine(t *testing.T, home string, bootID string) *machine {
 		Executable: func() (string, error) { return "/usr/local/bin/claude-afterlife", nil },
 		Git:        runGit,
 		ReadSecret: func(string) (string, error) { return "", errors.New("no terminal in tests") },
+		Exec: func(dir string, argv []string) error {
+			m.execs = append(m.execs, execCall{dir: dir, argv: argv})
+			return nil
+		},
 	}
 	return m
 }

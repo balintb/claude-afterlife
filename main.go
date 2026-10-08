@@ -30,11 +30,13 @@ type BootInfo struct {
 
 // App holds everything that touches the outside world, so tests can replace it.
 type App struct {
-	ClaudeDir string
-	StateDir  string
-	HomeDir   string
-	KeepBoots int
-	GOOS      string
+	ClaudeDir  string
+	StateDir   string
+	HomeDir    string
+	ConfigPath string
+	File       fileConfig
+	KeepBoots  int
+	GOOS       string
 
 	Stdin     io.Reader
 	Stdout    io.Writer
@@ -51,6 +53,7 @@ type App struct {
 	Executable func() (string, error)
 	Git        func(dir string, args ...string) (string, error)
 	ReadSecret func(prompt string) (string, error)
+	Exec       func(dir string, argv []string) error
 
 	lines *bufio.Reader
 }
@@ -87,10 +90,14 @@ func newApp() (*App, error) {
 		Executable: executablePath,
 		Git:        runGit,
 		ReadSecret: readSecretFromTerminal,
+		Exec:       execReplace,
 	}
 	app.ClaudeDir = app.envPath("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	stateBase := app.envPath("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	app.StateDir = app.envPath("CLAUDE_AFTERLIFE_DIR", filepath.Join(stateBase, name))
+	if err := app.useConfigFile(); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
 
@@ -119,7 +126,10 @@ Commands:
   restore     reopen the sessions lost since the last restore
   install     run snapshot every minute from a launchd agent (macOS)
   uninstall   remove that launchd agent
+  resume      resume one session by id from any folder, fetching it from your backup if needed;
+              also works as claude-afterlife --resume <session-id>, like claude --resume
   backup      save sessions to an encrypted git repository and restore them on a new machine
+  config      show the configuration file and the settings in effect (config init writes one)
   version     print the version
 
 Run 'claude-afterlife <command> -h' for the flags of a command.
@@ -137,8 +147,12 @@ func (a *App) Main(args []string) int {
 		"install":   a.cmdInstall,
 		"uninstall": a.cmdUninstall,
 		"backup":    a.cmdBackup,
+		"resume":    a.cmdResume,
+		"config":    a.cmdConfig,
 	}
 	switch command := args[0]; command {
+	case "--resume", "-resume", "-r":
+		return a.cmdResume(args[1:])
 	case "version", "-version", "--version":
 		fmt.Fprintf(a.Stdout, "%s %s\n", name, resolveVersion())
 		return 0
